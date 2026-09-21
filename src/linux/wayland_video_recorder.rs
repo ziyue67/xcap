@@ -26,10 +26,9 @@ use pipewire::{
     },
     stream::{Stream, StreamFlags},
 };
-use serde::Deserialize;
 use zbus::{
     blocking::Proxy,
-    zvariant::{OwnedFd, OwnedObjectPath, Type, Value},
+    zvariant::{DeserializeDict, OwnedFd, OwnedObjectPath, Type, Value},
 };
 
 use crate::{XCapError, XCapResult, video_recorder::Frame};
@@ -40,7 +39,7 @@ use super::{
 };
 
 #[allow(dead_code)]
-#[derive(Deserialize, Type, Debug)]
+#[derive(DeserializeDict, Type, Debug)]
 #[zvariant(signature = "dict")]
 pub struct ScreenCastStartStream {
     pub id: Option<String>,
@@ -50,7 +49,7 @@ pub struct ScreenCastStartStream {
     pub mapping_id: Option<String>,
 }
 
-#[derive(Deserialize, Type, Debug)]
+#[derive(DeserializeDict, Type, Debug)]
 #[zvariant(signature = "dict")]
 pub struct ScreenCastStartResponse {
     pub streams: Option<Vec<(u32, ScreenCastStartStream)>>,
@@ -89,9 +88,11 @@ impl ScreenCast<'_> {
         let session_handle_token = rand::random::<u32>().to_string();
         options.insert("session_handle_token", Value::from(&session_handle_token));
 
+        let mut response = portal_request.receive_signal("Response")?;
+
         self.proxy.call_method("CreateSession", &(options))?;
 
-        portal_request.receive_signal("Response")?;
+        response.next().ok_or(XCapError::new("Failed get response"))?;
 
         let unique_name = conn
             .unique_name()
@@ -117,10 +118,12 @@ impl ScreenCast<'_> {
         options.insert("types", Value::from(1_u32));
         options.insert("multiple", Value::from(false));
 
+        let mut response = portal_request.receive_signal("Response")?;
+
         self.proxy
             .call_method("SelectSources", &(session, options))?;
 
-        portal_request.receive_signal("Response")?;
+        response.next().ok_or(XCapError::new("Failed get response"))?;
 
         Ok(())
     }
@@ -135,9 +138,11 @@ impl ScreenCast<'_> {
 
         options.insert("handle_token", Value::from(&handle_token));
 
+        let receiver = wait_zbus_response(&portal_request);
+
         self.proxy.call_method("Start", &(session, "", options))?;
 
-        wait_zbus_response(&portal_request)
+        receiver.recv()?
     }
 
     #[allow(dead_code)]
