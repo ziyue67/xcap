@@ -31,6 +31,9 @@ pub enum XCapError {
     StdIOError(#[from] std::io::Error),
     #[cfg(target_os = "linux")]
     #[error(transparent)]
+    StdMPSCRecvError(#[from] std::sync::mpsc::RecvError),
+    #[cfg(target_os = "linux")]
+    #[error(transparent)]
     StdTimeSystemTimeError(#[from] std::time::SystemTimeError),
     #[cfg(target_os = "linux")]
     #[error(transparent)]
