@@ -2,15 +2,14 @@ use std::{collections::HashMap, env::temp_dir, fmt::Debug, fs, sync::Mutex};
 
 use image::RgbaImage;
 use scopeguard::defer;
-use serde::Deserialize;
 use zbus::{
     blocking::{Connection, Proxy},
-    zvariant::{Type, Value},
+    zvariant::{DeserializeDict, Type, Value},
 };
 
 use crate::{
     error::XCapResult,
-    platform::utils::{get_zbus_portal_request, safe_uri_to_path, wait_zbus_response}, XCapError,
+    platform::utils::{get_zbus_portal_request, safe_uri_to_path, wait_zbus_response},
 };
 
 use super::utils::{get_zbus_connection, png_to_rgba_image};
@@ -50,10 +49,10 @@ fn org_gnome_shell_screenshot(
     Ok(rgba_image)
 }
 
-#[derive(Deserialize, Type, Debug)]
+#[derive(DeserializeDict, Type, Debug)]
 #[zvariant(signature = "dict")]
 pub struct ScreenshotResponse{
-    uri: zbus::zvariant::OwnedValue,
+    uri: String,
 }
 
 /// https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Screenshot.html
@@ -79,14 +78,13 @@ fn org_freedesktop_portal_screenshot(
     options.insert("modal", Value::from(true));
     options.insert("interactive", Value::from(false));
 
+    let receiver = wait_zbus_response(&portal_request);
+
     // https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.Screenshot.xml
     proxy.call_method("Screenshot", &("", options))?;
-    let screenshot_response: ScreenshotResponse = wait_zbus_response(&portal_request)?;
+    let screenshot_response: ScreenshotResponse = receiver.recv()??;
 
-    let filename = safe_uri_to_path(&match screenshot_response.uri.into() {
-        Value::Str(path) => path,
-        _ => return Err(XCapError::new("Failed to get file name"))
-    })?;
+    let filename = safe_uri_to_path(&screenshot_response.uri)?;
     defer!({
         let _ = fs::remove_file(&filename);
     });
